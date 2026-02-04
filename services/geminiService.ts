@@ -1,7 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { AssetData, AssetType, OHLCData } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Removed global initialization to prevent runtime crash if API_KEY is missing on load.
+// const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const modelName = 'gemini-flash-latest';
 
 const CACHE_PREFIX = 'zenfi_asset_';
@@ -39,6 +40,9 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
   `;
 
   try {
+    // Initialize client lazily to handle missing key gracefully via catch block
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
     const response = await ai.models.generateContent({
       model: modelName,
       contents: prompt,
@@ -120,6 +124,9 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
 
 export const getMarketVibe = async (): Promise<string> => {
     try {
+        // Initialize client lazily
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
         const response = await ai.models.generateContent({
             model: modelName,
             contents: "What is the overall sentiment of the global financial market? Answer in 1 short, soothing, zen-like sentence.",
