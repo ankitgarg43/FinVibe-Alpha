@@ -1,35 +1,30 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { AssetData, AssetType } from "../types";
+import { AssetData, AssetType, OHLCData } from "../types";
 
-// Initialize Gemini Client
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 const modelName = 'gemini-3-flash-preview';
 
 export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
   const prompt = `
     Find the current live data for ${symbol}.
     
-    1. Determine Asset Type: CRYPTO, STOCK, FOREX, COMMODITY, or MORTGAGE.
+    1. Determine Asset Type.
     2. Pricing Logic:
-       - IF CRYPTO, STOCK, or COMMODITY: Return the price in USD as 'pricePrimary' and the converted price in CAD as 'priceSecondary'. Set 'currencyPrimary' to "USD".
-       - IF FOREX (e.g. USD/CAD): Return the exchange rate as 'pricePrimary'. Set 'priceSecondary' to null. Set 'currencyPrimary' to the quote currency (e.g. CAD for USD/CAD).
-       - IF MORTGAGE (or "Rates"): Return the rate (e.g. 6.5) as 'pricePrimary'. Set 'currencyPrimary' to "%".
-         - If query mentions "Variable" or "ARM", use that rate. Otherwise 30Y Fixed.
-         - Must include 'rates' array for mortgages.
+       - Standard: Return price in USD (pricePrimary) and CAD (priceSecondary).
+       - Forex: Exchange rate.
+       - Mortgage: Rate in %.
+    3. Vibe Check: Provide a 1-sentence minimalist Zen description (e.g., "Flowing steadily", "Turbulence detected", "Calm waters", "Rising tide").
 
-    3. Vibe Check: Provide a 1-sentence Gen Alpha slang description ("Straight bussin", "Cooked", "Fanum tax", etc).
-
-    Return strictly JSON:
+    Return JSON:
     {
       "name": "Full Name",
       "type": "STOCK",
       "pricePrimary": 123.45,
       "currencyPrimary": "USD",
-      "priceSecondary": 160.55, (nullable)
+      "priceSecondary": 160.55,
       "change24h": -5.2,
       "vibe": "...",
-      "rates": [{"name": "30Y Fixed", "value": 6.5}, ...] (Optional)
+      "rates": [{"name": "30Y Fixed", "value": 6.5}]
     }
   `;
 
@@ -50,16 +45,7 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
             priceSecondary: { type: Type.NUMBER },
             change24h: { type: Type.NUMBER },
             vibe: { type: Type.STRING },
-            rates: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  value: { type: Type.NUMBER }
-                }
-              }
-            }
+            rates: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, value: { type: Type.NUMBER } } } }
           },
           required: ["name", "pricePrimary", "currencyPrimary", "change24h", "type", "vibe"],
         },
@@ -68,10 +54,10 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
 
     const text = response.text;
     if (!text) throw new Error("No data returned");
-    
     const data = JSON.parse(text);
 
-    const sparkline = generateMockSparkline(data.pricePrimary, data.change24h);
+    // Generate advanced data
+    const { sparkline, ohlcData } = generateMockHistory(data.pricePrimary, data.change24h);
 
     return {
       id: symbol.toUpperCase(),
@@ -86,6 +72,7 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
       vibe: data.vibe,
       lastUpdated: new Date().toLocaleTimeString(),
       sparkline,
+      ohlcData,
       isTrending: Math.abs(data.change24h) > 5,
       rates: data.rates
     };
@@ -100,29 +87,42 @@ export const getMarketVibe = async (): Promise<string> => {
     try {
         const response = await ai.models.generateContent({
             model: modelName,
-            contents: "What is the overall sentiment of the global financial market right now? Answer in 1 short sentence using Gen Alpha slang (e.g. 'We cooking', 'Fanum tax on gains', 'Rizzing up the charts').",
-            config: {
-                 tools: [{ googleSearch: {} }],
-            }
+            contents: "What is the overall sentiment of the global financial market? Answer in 1 short, soothing, zen-like sentence.",
+            config: { tools: [{ googleSearch: {} }] }
         });
-        return response.text || "Vibes are loading...";
+        return response.text || "Balance is being restored...";
     } catch (e) {
-        return "Vibes currently unreachable.";
+        return "Seeking equilibrium...";
     }
 }
 
-// Helper to generate fake chart data based on current trend
-const generateMockSparkline = (currentPrice: number, changePercent: number): number[] => {
-  const points = 50;
-  const data: number[] = [];
-  let price = currentPrice * (1 - (changePercent / 100)); 
+// Generate Sparkline AND Candlesticks
+const generateMockHistory = (currentPrice: number, changePercent: number) => {
+  const points = 30; 
+  const sparkline: number[] = [];
+  const ohlcData: OHLCData[] = [];
   
+  let price = currentPrice * (1 - (changePercent / 100)); // Start price
+  const volatility = currentPrice * 0.02;
+
   for (let i = 0; i < points; i++) {
-    const noise = (Math.random() - 0.5) * (currentPrice * 0.05); 
-    const step = (currentPrice - price) / (points - i); 
-    price += step + noise;
-    data.push(price);
+    const drift = (currentPrice - price) / (points - i);
+    const noise = (Math.random() - 0.5) * volatility;
+    
+    // Generate Candle
+    const open = price;
+    const close = price + drift + noise;
+    const high = Math.max(open, close) + (Math.random() * volatility * 0.5);
+    const low = Math.min(open, close) - (Math.random() * volatility * 0.5);
+    
+    ohlcData.push({ time: i, open, high, low, close });
+    sparkline.push(close);
+    
+    price = close;
   }
-  data.push(currentPrice); 
-  return data;
+  // Ensure last matches current
+  ohlcData[points-1].close = currentPrice;
+  sparkline[points-1] = currentPrice;
+
+  return { sparkline, ohlcData };
 };
