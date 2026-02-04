@@ -24,6 +24,7 @@ const App: React.FC = () => {
   const [marketVibe, setMarketVibe] = useState<string>("Harmonizing...");
   const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
   const [globalLoading, setGlobalLoading] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState<string>(""); // New state for granular loading feedback
   
   // New States
   const [viewMode, setViewMode] = useState<ViewMode>('SIMPLE');
@@ -35,12 +36,19 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const init = async () => {
+        setLoadingStatus("Establishing connection to the ether...");
+        // Fire vibe check parallel
         getMarketVibe().then(setMarketVibe);
+        
+        // Sequential load to show progress
         for (const symbol of DEFAULT_ASSETS) {
-           await handleAddAsset(symbol);
+           setLoadingStatus(`Locating ${symbol} frequency...`);
+           await handleAddAsset(symbol, true); // Pass true to suppress sound/loading toggle if needed, or just standard
         }
+        setLoadingStatus("");
     };
     init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Simulation Engine
@@ -62,7 +70,6 @@ const App: React.FC = () => {
                 const newSparkline = [...asset.sparkline.slice(1), newPrice];
                 
                 // Update OHLC (Advanced Mode Data)
-                // We fake the last candle updating live
                 const newOhlc = [...asset.ohlcData];
                 const lastCandle = newOhlc[newOhlc.length - 1];
                 lastCandle.close = newPrice;
@@ -106,11 +113,13 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [alertSettings]);
 
-  const handleAddAsset = async (symbol: string) => {
+  const handleAddAsset = async (symbol: string, isInitial = false) => {
     if (assets.some(a => a.symbol === symbol.toUpperCase())) return;
-    setGlobalLoading(true);
+    
+    // Only toggle global loading if not initial sequence (since initial handles its own status text)
+    if (!isInitial) setGlobalLoading(true);
     setLoadingMap(prev => ({ ...prev, [symbol]: true }));
-    playUiSound();
+    if (!isInitial) playUiSound();
     
     try {
       const data = await fetchAssetData(symbol);
@@ -119,7 +128,7 @@ const App: React.FC = () => {
       console.error("Failed to add asset", error);
     } finally {
       setLoadingMap(prev => ({ ...prev, [symbol]: false }));
-      setGlobalLoading(false);
+      if (!isInitial) setGlobalLoading(false);
     }
   };
 
@@ -183,24 +192,38 @@ const App: React.FC = () => {
                 })}
             </div>
 
-            {/* Grid */}
-            <div className={`grid gap-6 ${viewMode === 'ADVANCED' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-3 xl:grid-cols-4'}`}>
-                {filteredAssets.map(asset => (
-                    <TickerCard 
-                        key={asset.id} 
-                        data={asset} 
-                        onRefresh={handleRefresh}
-                        loading={!!loadingMap[asset.symbol]}
-                        alertThreshold={alertSettings[asset.type]}
-                        mode={viewMode}
-                    />
-                ))}
-            </div>
+            {/* Grid or Loading State */}
+            {assets.length === 0 && loadingStatus ? (
+                 <div className="flex flex-col items-center justify-center min-h-[400px] animate-in fade-in duration-700">
+                    <div className="relative w-20 h-20 mb-8">
+                        <div className="absolute inset-0 border-t-2 border-zen-green rounded-full animate-spin"></div>
+                        <div className="absolute inset-2 border-r-2 border-zen-blue rounded-full animate-[spin_3s_linear_infinite_reverse]"></div>
+                        <div className="absolute inset-4 border-b-2 border-zen-red rounded-full animate-pulse"></div>
+                    </div>
+                    <h2 className="text-xl font-light text-white tracking-widest animate-pulse mb-2">{loadingStatus}</h2>
+                    <p className="text-xs text-gray-500 font-mono">POWERED BY GEMINI</p>
+                 </div>
+            ) : (
+                <>
+                    <div className={`grid gap-6 ${viewMode === 'ADVANCED' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-3 xl:grid-cols-4'}`}>
+                        {filteredAssets.map(asset => (
+                            <TickerCard 
+                                key={asset.id} 
+                                data={asset} 
+                                onRefresh={handleRefresh}
+                                loading={!!loadingMap[asset.symbol]}
+                                alertThreshold={alertSettings[asset.type]}
+                                mode={viewMode}
+                            />
+                        ))}
+                    </div>
 
-            {filteredAssets.length === 0 && !globalLoading && (
-                <div className="text-center py-32 opacity-30 font-light">
-                    <p className="text-xl tracking-widest uppercase">Tranquility</p>
-                </div>
+                    {filteredAssets.length === 0 && !loadingStatus && !globalLoading && (
+                        <div className="text-center py-32 opacity-30 font-light">
+                            <p className="text-xl tracking-widest uppercase">Tranquility</p>
+                        </div>
+                    )}
+                </>
             )}
         </div>
     </div>

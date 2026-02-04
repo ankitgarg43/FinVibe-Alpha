@@ -1,24 +1,27 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { AssetData, AssetType, OHLCData } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-const modelName = 'gemini-3-flash-preview';
+const modelName = 'gemini-flash-latest';
 
 export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
   const prompt = `
-    Find the current live data for ${symbol}.
+    Find the current live data for ${symbol} using the search tool.
     
-    1. Determine Asset Type.
+    1. Determine Asset Type (CRYPTO, STOCK, FOREX, COMMODITY, MORTGAGE).
     2. Pricing Logic:
        - Standard: Return price in USD (pricePrimary) and CAD (priceSecondary).
        - Forex: Exchange rate.
        - Mortgage: Rate in %.
     3. Vibe Check: Provide a 1-sentence minimalist Zen description (e.g., "Flowing steadily", "Turbulence detected", "Calm waters", "Rising tide").
 
-    Return JSON:
+    RESPONSE FORMAT:
+    Return ONLY a valid JSON object. Do not include markdown formatting or explanations.
+    
+    Required JSON Structure:
     {
       "name": "Full Name",
-      "type": "STOCK",
+      "type": "STOCK", 
       "pricePrimary": 123.45,
       "currencyPrimary": "USD",
       "priceSecondary": 160.55,
@@ -34,26 +37,24 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
       contents: prompt,
       config: {
         tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            name: { type: Type.STRING },
-            type: { type: Type.STRING, enum: [AssetType.CRYPTO, AssetType.STOCK, AssetType.FOREX, AssetType.COMMODITY, AssetType.MORTGAGE] },
-            pricePrimary: { type: Type.NUMBER },
-            currencyPrimary: { type: Type.STRING },
-            priceSecondary: { type: Type.NUMBER },
-            change24h: { type: Type.NUMBER },
-            vibe: { type: Type.STRING },
-            rates: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, value: { type: Type.NUMBER } } } }
-          },
-          required: ["name", "pricePrimary", "currencyPrimary", "change24h", "type", "vibe"],
-        },
+        // responseMimeType and responseSchema removed because they conflict with tools
       },
     });
 
-    const text = response.text;
+    let text = response.text || "";
+    
+    // Clean up markdown code blocks if the model includes them
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    // Ensure we only try to parse the JSON object part
+    const startIndex = text.indexOf('{');
+    const endIndex = text.lastIndexOf('}');
+    if (startIndex !== -1 && endIndex !== -1) {
+        text = text.substring(startIndex, endIndex + 1);
+    }
+
     if (!text) throw new Error("No data returned");
+    
     const data = JSON.parse(text);
 
     // Generate advanced data
