@@ -1,12 +1,23 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Header from './components/Header';
 import TickerCard from './components/TickerCard';
 import SearchBar from './components/SearchBar';
-import { AssetData, AssetType, FilterType } from './types';
+import SettingsModal from './components/SettingsModal';
+import { AssetData, AssetType, FilterType, AlertSettings } from './types';
 import { fetchAssetData, getMarketVibe } from './services/geminiService';
+import { playTrendAlert, playUiSound } from './services/audioService';
 
 // Initial default assets to populate the board
-const DEFAULT_ASSETS = ['BTC', 'ETH', 'NVDA', 'USD/CAD'];
+const DEFAULT_ASSETS = ['BTC', 'ETH', 'NVDA', 'USD/CAD', 'Mortgage Rates US', 'Mortgage Rates Canada', 'Variable Mortgage Rates'];
+
+// Default alert thresholds (%)
+const DEFAULT_SETTINGS: AlertSettings = {
+  [AssetType.CRYPTO]: 5.0,
+  [AssetType.STOCK]: 2.0,
+  [AssetType.FOREX]: 0.5,
+  [AssetType.COMMODITY]: 1.5,
+  [AssetType.MORTGAGE]: 0.2 // Very sensitive for interest rates
+};
 
 const App: React.FC = () => {
   const [assets, setAssets] = useState<AssetData[]>([]);
@@ -14,14 +25,18 @@ const App: React.FC = () => {
   const [marketVibe, setMarketVibe] = useState<string>("Loading vibes...");
   const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
   const [globalLoading, setGlobalLoading] = useState(false);
+  
+  // Alert State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [alertSettings, setAlertSettings] = useState<AlertSettings>(DEFAULT_SETTINGS);
+  
+  // Track last alert times to prevent spamming sounds (Map<Symbol, Timestamp>)
+  const lastAlertRef = useRef<Record<string, number>>({});
 
   // Initialize data
   useEffect(() => {
     const init = async () => {
-        // Fetch vibe
         getMarketVibe().then(setMarketVibe);
-
-        // Fetch defaults one by one to show progress
         for (const symbol of DEFAULT_ASSETS) {
            await handleAddAsset(symbol);
         }
@@ -30,55 +45,73 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Real-time Simulation Engine
+  // Real-time Simulation Engine & Alert Logic
   useEffect(() => {
     const interval = setInterval(() => {
         setAssets(currentAssets => 
             currentAssets.map(asset => {
-                // Simulate "live" movement
-                // High volatility for crypto, lower for forex
-                const volatility = asset.type === 'CRYPTO' ? 0.003 : 0.001; 
+                // Determine volatility based on type
+                let volatility = 0.001;
+                if (asset.type === AssetType.CRYPTO) volatility = 0.003;
+                if (asset.type === AssetType.MORTGAGE) volatility = 0.0001; // Rates don't move much in seconds
+
                 const direction = Math.random() > 0.5 ? 1 : -1;
-                // Add some bias from 24h trend
                 const trendBias = asset.change24h > 0 ? 0.0005 : -0.0005;
                 const change = 1 + ((Math.random() * volatility * direction) + trendBias);
                 
                 const newPrice = asset.price * change;
-                
-                // Update sparkline (Keep last 50 points)
                 const newSparkline = [...asset.sparkline.slice(1), newPrice];
-
-                // Recalculate Change 24h roughly based on price movement
-                // This makes the percentage dance a bit too
                 const drift = (newPrice - asset.price) / asset.price * 100;
                 const newChange24h = asset.change24h + drift;
+
+                // Handle Mortgage sub-rates update
+                let newRates = asset.rates;
+                if (asset.type === AssetType.MORTGAGE && asset.rates) {
+                    newRates = asset.rates.map(r => ({
+                        ...r,
+                        value: r.value * (1 + ((Math.random() * 0.0001 * direction)))
+                    }));
+                }
+
+                // --- Sound Alert Logic ---
+                const threshold = alertSettings[asset.type];
+                const now = Date.now();
+                const lastAlert = lastAlertRef.current[asset.symbol] || 0;
+                const COOLDOWN = 10000; // 10 seconds cooldown per asset
+
+                // Check if absolute change exceeds threshold AND cooldown passed
+                if (Math.abs(newChange24h) >= threshold && (now - lastAlert > COOLDOWN)) {
+                    playTrendAlert(newChange24h > 0);
+                    lastAlertRef.current[asset.symbol] = now;
+                }
+                // -------------------------
 
                 return {
                     ...asset,
                     price: newPrice,
                     change24h: newChange24h,
-                    sparkline: newSparkline
+                    sparkline: newSparkline,
+                    rates: newRates
                 };
             })
         );
     }, 1000); // 1 Second tick rate
 
     return () => clearInterval(interval);
-  }, []);
+  }, [alertSettings]); // Re-create interval if settings change to capture new values
 
   const handleAddAsset = async (symbol: string) => {
-    // Avoid duplicates
     if (assets.some(a => a.symbol === symbol.toUpperCase())) return;
 
     setGlobalLoading(true);
     setLoadingMap(prev => ({ ...prev, [symbol]: true }));
+    playUiSound(); // Feedback
     
     try {
       const data = await fetchAssetData(symbol);
       setAssets(prev => [...prev, data]);
     } catch (error) {
       console.error("Failed to add asset", error);
-      alert(`Could not find data for ${symbol}. Try again?`);
     } finally {
       setLoadingMap(prev => ({ ...prev, [symbol]: false }));
       setGlobalLoading(false);
@@ -87,6 +120,7 @@ const App: React.FC = () => {
 
   const handleRefresh = useCallback(async (symbol: string) => {
     setLoadingMap(prev => ({ ...prev, [symbol]: true }));
+    playUiSound();
     try {
       const data = await fetchAssetData(symbol);
       setAssets(prev => prev.map(a => a.symbol === symbol ? data : a));
@@ -97,6 +131,16 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const handleOpenSettings = () => {
+    playUiSound();
+    setIsSettingsOpen(true);
+  };
+
+  const handleSaveSettings = (newSettings: AlertSettings) => {
+      setAlertSettings(newSettings);
+      playUiSound();
+  };
+
   const filteredAssets = filter === 'ALL' 
     ? assets 
     : assets.filter(a => a.type === filter);
@@ -104,27 +148,45 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-void text-white font-sans p-4 md:p-8 overflow-x-hidden selection:bg-neon-pink selection:text-white">
         
+        <SettingsModal 
+            isOpen={isSettingsOpen} 
+            onClose={() => setIsSettingsOpen(false)}
+            settings={alertSettings}
+            onSave={handleSaveSettings}
+        />
+
         <div className="max-w-7xl mx-auto">
-            <Header marketVibe={marketVibe} />
+            <Header marketVibe={marketVibe} onOpenSettings={handleOpenSettings} />
 
             <SearchBar onAdd={handleAddAsset} isLoading={globalLoading} />
 
             {/* Filters */}
-            <div className="flex flex-wrap gap-2 mb-8 justify-center">
-                {(['ALL', 'CRYPTO', 'STOCK', 'FOREX', 'COMMODITY'] as const).map((f) => (
-                    <button
-                        key={f}
-                        onClick={() => setFilter(f as FilterType)}
-                        className={`
-                            px-4 py-2 rounded-full font-mono text-sm font-bold border-2 transition-all
-                            ${filter === f 
-                                ? 'bg-white text-black border-white shadow-[4px_4px_0px_0px_rgba(57,255,20,1)]' 
-                                : 'bg-transparent text-gray-500 border-gray-700 hover:border-gray-500'}
-                        `}
-                    >
-                        {f === 'ALL' ? '🔥 ALL' : f}
-                    </button>
-                ))}
+            <div className="flex flex-wrap gap-4 mb-10 justify-center items-center">
+                {(['ALL', 'CRYPTO', 'STOCK', 'FOREX', 'COMMODITY', 'MORTGAGE'] as const).map((f) => {
+                    const isActive = filter === f;
+                    return (
+                        <div key={f} className="relative group">
+                            {/* Glow effect matching search bar style */}
+                            <div className={`absolute -inset-0.5 bg-gradient-to-r from-neon-green to-neon-pink rounded-xl blur opacity-50 transition duration-300 ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-50'}`}></div>
+                            
+                            <button
+                                onClick={() => { setFilter(f as FilterType); playUiSound(); }}
+                                className={`
+                                    relative px-6 py-2 rounded-xl font-mono text-sm font-bold border transition-all duration-200
+                                    ${isActive 
+                                        ? 'bg-black text-white border-transparent' 
+                                        : 'bg-black text-gray-500 border-white/10 hover:text-white'}
+                                `}
+                            >
+                                <span className="flex items-center gap-2">
+                                    {f === 'ALL' && <span className="text-lg">🔥</span>}
+                                    {f === 'MORTGAGE' && <span className="text-lg">🏠</span>}
+                                    {f}
+                                </span>
+                            </button>
+                        </div>
+                    );
+                })}
             </div>
 
             {/* Grid */}
@@ -135,6 +197,7 @@ const App: React.FC = () => {
                         data={asset} 
                         onRefresh={handleRefresh}
                         loading={!!loadingMap[asset.symbol]}
+                        alertThreshold={alertSettings[asset.type]}
                     />
                 ))}
             </div>

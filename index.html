@@ -9,6 +9,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <script>
+      // Polyfill process.env for browser environments to prevent ReferenceErrors
+      window.process = window.process || { env: { API_KEY: '' } };
+
       tailwind.config = {
         theme: {
           extend: {
@@ -49,6 +52,7 @@
 {
   "imports": {
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react-dom": "https://esm.sh/react-dom@^19.2.4",
     "@google/genai": "https://esm.sh/@google/genai@^1.39.0",
     "recharts": "https://esm.sh/recharts@^3.7.0",
     "react/": "https://esm.sh/react@^19.2.4/",
@@ -59,5 +63,6 @@
 </head>
   <body>
     <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
   </body>
 </html>

@@ -8,18 +8,26 @@ const modelName = 'gemini-3-flash-preview';
 
 export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
   const prompt = `
-    Find the current live price, 24h percentage change, and full name for ${symbol}.
-    Also provide a "Gen Alpha" style short vibe check (1 sentence slang description, e.g., "Straight bussin", "It's joever", "To the moon", "Cooked").
-    Determine if it is CRYPTO, STOCK, FOREX, or COMMODITY.
+    Find the current live price/rate, 24h percentage change, and full name for ${symbol}.
+    
+    SPECIAL HANDLING FOR MORTGAGES (if query involves "Mortgage", "Rates", or "Variable"):
+    - Set type to 'MORTGAGE'.
+    - If the query specifically mentions "Variable" or "ARM", use the current Variable/Adjustable Rate as the main 'price'.
+    - Otherwise, use the 30-Year Fixed rate as the main 'price'.
+    - Always provide a 'rates' array including keys like: "30Y Fixed", "15Y Fixed", "Variable" (or "5/1 ARM").
+    
+    Also provide a "Gen Alpha" style short vibe check (1 sentence slang description, e.g., "Straight bussin", "It's joever", "To the moon", "Cooked", "High key expensive").
+    Determine if it is CRYPTO, STOCK, FOREX, COMMODITY, or MORTGAGE.
     
     Return strictly JSON with this schema:
     {
       "name": "Full Name",
       "price": 123.45,
-      "currency": "USD" or "CAD" etc,
+      "currency": "USD" or "CAD" or "%",
       "change24h": -5.2 (number only),
       "type": "STOCK",
-      "vibe": "slang description"
+      "vibe": "slang description",
+      "rates": [{"name": "30Y Fixed", "value": 6.5}, ...] (Optional, only for MORTGAGE)
     }
   `;
 
@@ -37,8 +45,18 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
             price: { type: Type.NUMBER },
             currency: { type: Type.STRING },
             change24h: { type: Type.NUMBER },
-            type: { type: Type.STRING, enum: [AssetType.CRYPTO, AssetType.STOCK, AssetType.FOREX, AssetType.COMMODITY] },
+            type: { type: Type.STRING, enum: [AssetType.CRYPTO, AssetType.STOCK, AssetType.FOREX, AssetType.COMMODITY, AssetType.MORTGAGE] },
             vibe: { type: Type.STRING },
+            rates: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  value: { type: Type.NUMBER }
+                }
+              }
+            }
           },
           required: ["name", "price", "change24h", "type", "vibe", "currency"],
         },
@@ -66,6 +84,7 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
       lastUpdated: new Date().toLocaleTimeString(),
       sparkline,
       isTrending: Math.abs(data.change24h) > 5,
+      rates: data.rates
     };
 
   } catch (error) {
