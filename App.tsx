@@ -60,6 +60,8 @@ const App: React.FC = () => {
                 const change = 1 + ((Math.random() * volatility * direction) + trendBias);
                 
                 const newPrice = asset.price * change;
+                const newSecondaryPrice = asset.secondaryPrice ? asset.secondaryPrice * change : undefined;
+                
                 const newSparkline = [...asset.sparkline.slice(1), newPrice];
                 const drift = (newPrice - asset.price) / asset.price * 100;
                 const newChange24h = asset.change24h + drift;
@@ -89,6 +91,7 @@ const App: React.FC = () => {
                 return {
                     ...asset,
                     price: newPrice,
+                    secondaryPrice: newSecondaryPrice,
                     change24h: newChange24h,
                     sparkline: newSparkline,
                     rates: newRates

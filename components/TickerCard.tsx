@@ -59,11 +59,20 @@ const TickerCard: React.FC<TickerCardProps> = ({ data, onRefresh, loading, alert
                     </span>
                     <span className="text-[10px] font-bold tracking-wider text-gray-500">LIVE</span>
                 </div>
-                <div className="text-2xl font-bold font-sans">
-                    {data.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    <span className="text-xs text-gray-500 ml-1">{data.currency}</span>
+                <div className="flex flex-col items-end">
+                    <div className="text-2xl font-bold font-sans">
+                        {data.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <span className="text-xs text-gray-500 ml-1">{data.currency}</span>
+                    </div>
+                    {/* Secondary Price (Smart Display) */}
+                    {data.secondaryPrice && (
+                        <div className="text-xs font-mono font-bold text-gray-400 mt-[-2px]">
+                            ≈ {data.secondaryPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} 
+                            <span className="text-[10px] ml-1">{data.secondaryCurrency}</span>
+                        </div>
+                    )}
                 </div>
-                <div className={`text-xs font-mono font-bold flex items-center justify-end gap-1 ${isPositive ? 'text-neon-green' : 'text-neon-pink'}`}>
+                <div className={`text-xs font-mono font-bold flex items-center justify-end gap-1 mt-1 ${isPositive ? 'text-neon-green' : 'text-neon-pink'}`}>
                     {isHighVolatility && (
                         <span className="flex items-center justify-center w-4 h-4 bg-white/10 rounded-full animate-pulse mr-1" title="High Volatility Alert">
                             ⚡

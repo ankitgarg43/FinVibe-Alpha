@@ -8,26 +8,28 @@ const modelName = 'gemini-3-flash-preview';
 
 export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
   const prompt = `
-    Find the current live price/rate, 24h percentage change, and full name for ${symbol}.
+    Find the current live data for ${symbol}.
     
-    SPECIAL HANDLING FOR MORTGAGES (if query involves "Mortgage", "Rates", or "Variable"):
-    - Set type to 'MORTGAGE'.
-    - If the query specifically mentions "Variable" or "ARM", use the current Variable/Adjustable Rate as the main 'price'.
-    - Otherwise, use the 30-Year Fixed rate as the main 'price'.
-    - Always provide a 'rates' array including keys like: "30Y Fixed", "15Y Fixed", "Variable" (or "5/1 ARM").
-    
-    Also provide a "Gen Alpha" style short vibe check (1 sentence slang description, e.g., "Straight bussin", "It's joever", "To the moon", "Cooked", "High key expensive").
-    Determine if it is CRYPTO, STOCK, FOREX, COMMODITY, or MORTGAGE.
-    
-    Return strictly JSON with this schema:
+    1. Determine Asset Type: CRYPTO, STOCK, FOREX, COMMODITY, or MORTGAGE.
+    2. Pricing Logic:
+       - IF CRYPTO, STOCK, or COMMODITY: Return the price in USD as 'pricePrimary' and the converted price in CAD as 'priceSecondary'. Set 'currencyPrimary' to "USD".
+       - IF FOREX (e.g. USD/CAD): Return the exchange rate as 'pricePrimary'. Set 'priceSecondary' to null. Set 'currencyPrimary' to the quote currency (e.g. CAD for USD/CAD).
+       - IF MORTGAGE (or "Rates"): Return the rate (e.g. 6.5) as 'pricePrimary'. Set 'currencyPrimary' to "%".
+         - If query mentions "Variable" or "ARM", use that rate. Otherwise 30Y Fixed.
+         - Must include 'rates' array for mortgages.
+
+    3. Vibe Check: Provide a 1-sentence Gen Alpha slang description ("Straight bussin", "Cooked", "Fanum tax", etc).
+
+    Return strictly JSON:
     {
       "name": "Full Name",
-      "price": 123.45,
-      "currency": "USD" or "CAD" or "%",
-      "change24h": -5.2 (number only),
       "type": "STOCK",
-      "vibe": "slang description",
-      "rates": [{"name": "30Y Fixed", "value": 6.5}, ...] (Optional, only for MORTGAGE)
+      "pricePrimary": 123.45,
+      "currencyPrimary": "USD",
+      "priceSecondary": 160.55, (nullable)
+      "change24h": -5.2,
+      "vibe": "...",
+      "rates": [{"name": "30Y Fixed", "value": 6.5}, ...] (Optional)
     }
   `;
 
@@ -42,10 +44,11 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
           type: Type.OBJECT,
           properties: {
             name: { type: Type.STRING },
-            price: { type: Type.NUMBER },
-            currency: { type: Type.STRING },
-            change24h: { type: Type.NUMBER },
             type: { type: Type.STRING, enum: [AssetType.CRYPTO, AssetType.STOCK, AssetType.FOREX, AssetType.COMMODITY, AssetType.MORTGAGE] },
+            pricePrimary: { type: Type.NUMBER },
+            currencyPrimary: { type: Type.STRING },
+            priceSecondary: { type: Type.NUMBER },
+            change24h: { type: Type.NUMBER },
             vibe: { type: Type.STRING },
             rates: {
               type: Type.ARRAY,
@@ -58,7 +61,7 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
               }
             }
           },
-          required: ["name", "price", "change24h", "type", "vibe", "currency"],
+          required: ["name", "pricePrimary", "currencyPrimary", "change24h", "type", "vibe"],
         },
       },
     });
@@ -68,16 +71,16 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
     
     const data = JSON.parse(text);
 
-    // Mock sparkline data since search doesn't return history easily in one go
-    // We generate a trend that matches the change24h direction
-    const sparkline = generateMockSparkline(data.price, data.change24h);
+    const sparkline = generateMockSparkline(data.pricePrimary, data.change24h);
 
     return {
       id: symbol.toUpperCase(),
       symbol: symbol.toUpperCase(),
       name: data.name,
-      price: data.price,
-      currency: data.currency,
+      price: data.pricePrimary,
+      currency: data.currencyPrimary,
+      secondaryPrice: data.priceSecondary || undefined,
+      secondaryCurrency: data.priceSecondary ? 'CAD' : undefined,
       change24h: data.change24h,
       type: data.type as AssetType,
       vibe: data.vibe,
@@ -89,7 +92,6 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
 
   } catch (error) {
     console.error("Gemini fetch error:", error);
-    // Return a fallback or rethrow
     throw error;
   }
 };
@@ -111,17 +113,16 @@ export const getMarketVibe = async (): Promise<string> => {
 
 // Helper to generate fake chart data based on current trend
 const generateMockSparkline = (currentPrice: number, changePercent: number): number[] => {
-  const points = 50; // Increased points for smoother graph
+  const points = 50;
   const data: number[] = [];
-  let price = currentPrice * (1 - (changePercent / 100)); // approximate start
+  let price = currentPrice * (1 - (changePercent / 100)); 
   
   for (let i = 0; i < points; i++) {
-    // Add randomness but bias towards the final currentPrice
-    const noise = (Math.random() - 0.5) * (currentPrice * 0.05); // More volatility
+    const noise = (Math.random() - 0.5) * (currentPrice * 0.05); 
     const step = (currentPrice - price) / (points - i); 
     price += step + noise;
     data.push(price);
   }
-  data.push(currentPrice); // Ensure end matches
+  data.push(currentPrice); 
   return data;
 };

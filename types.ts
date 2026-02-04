@@ -19,6 +19,8 @@ export interface AssetData {
   sparkline: number[]; // Array of numbers for chart
   isTrending?: boolean;
   rates?: { name: string; value: number }[]; // Specific for Mortgage type (e.g. 30yr, 15yr)
+  secondaryPrice?: number; // Optional price in secondary currency (e.g. CAD for USD assets)
+  secondaryCurrency?: string;
 }
 
 export interface SearchResult {
