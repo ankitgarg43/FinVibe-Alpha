@@ -49,7 +49,7 @@ const TickerCard: React.FC<TickerCardProps> = ({ data, onRefresh, loading, alert
   const isMortgage = data.type === AssetType.MORTGAGE;
   
   // Colors
-  const accentColor = isPositive ? '#34d399' : '#fb7185';
+  const accentColor = data.isStale ? '#94a3b8' : (isPositive ? '#34d399' : '#fb7185');
   
   // Prepare Data for Charts
   const chartData = mode === 'SIMPLE' 
@@ -64,18 +64,28 @@ const TickerCard: React.FC<TickerCardProps> = ({ data, onRefresh, loading, alert
     <div className={`
       relative overflow-hidden
       bg-zen-card/80 backdrop-blur-md 
-      border border-white/5
+      border ${data.isStale ? 'border-yellow-500/20' : 'border-white/5'}
       rounded-3xl p-6 transition-all duration-500
       hover:border-white/10 hover:shadow-2xl hover:shadow-black/50
       ${mode === 'ADVANCED' ? 'h-[400px] col-span-1 md:col-span-2' : 'h-[280px]'}
       flex flex-col group
     `}>
       
+      {/* Offline/Stale Indicator */}
+      {data.isStale && (
+        <div className="absolute top-0 right-0 p-3 z-20">
+            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-yellow-500 bg-yellow-500/10 px-2 py-1 rounded border border-yellow-500/20 animate-pulse">
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span>
+                Offline Data
+            </span>
+        </div>
+      )}
+      
       {/* Header */}
       <div className="flex justify-between items-start mb-4 z-10">
         <div>
            <div className="flex items-center gap-3">
-             <h3 className="text-2xl font-semibold tracking-tight text-white">
+             <h3 className={`text-2xl font-semibold tracking-tight ${data.isStale ? 'text-gray-400' : 'text-white'}`}>
                 {isMortgage ? data.name.replace('Mortgage Rates', '').trim() : data.symbol}
              </h3>
              <span className={`text-[10px] px-2 py-1 rounded-md font-medium tracking-wider bg-white/5 text-gray-400 border border-white/5`}>
@@ -88,12 +98,12 @@ const TickerCard: React.FC<TickerCardProps> = ({ data, onRefresh, loading, alert
         </div>
 
         {!isMortgage && (
-            <div className="text-right">
-                <div className="text-2xl font-mono font-medium text-white">
+            <div className="text-right mt-6 sm:mt-0">
+                <div className={`text-2xl font-mono font-medium ${data.isStale ? 'text-gray-400' : 'text-white'}`}>
                     {data.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     <span className="text-sm text-gray-500 ml-1">{data.currency}</span>
                 </div>
-                <div className={`text-sm font-mono flex justify-end items-center gap-2 ${isPositive ? 'text-zen-green' : 'text-zen-red'}`}>
+                <div className={`text-sm font-mono flex justify-end items-center gap-2 ${data.isStale ? 'text-gray-500' : (isPositive ? 'text-zen-green' : 'text-zen-red')}`}>
                      <span>{isPositive ? '+' : ''}{data.change24h.toFixed(2)}%</span>
                      {mode === 'ADVANCED' && (
                          <span className="text-gray-600 text-[10px]">24H</span>
@@ -109,7 +119,7 @@ const TickerCard: React.FC<TickerCardProps> = ({ data, onRefresh, loading, alert
       </div>
 
       {/* Chart Area */}
-      <div className="flex-grow w-full relative">
+      <div className={`flex-grow w-full relative ${data.isStale ? 'opacity-50 grayscale' : ''} transition-all duration-500`}>
         {isMortgage && data.rates ? (
              <div className="h-full w-full overflow-y-auto scrollbar-hide mt-2 pr-2">
              <table className="w-full text-sm font-mono text-gray-400">

@@ -30,6 +30,7 @@ export interface AssetData {
   rates?: { name: string; value: number }[];
   secondaryPrice?: number;
   secondaryCurrency?: string;
+  isStale?: boolean;
 }
 
 export interface SearchResult {

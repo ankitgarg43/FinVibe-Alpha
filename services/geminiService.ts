@@ -4,7 +4,14 @@ import { AssetData, AssetType, OHLCData } from "../types";
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const modelName = 'gemini-flash-latest';
 
+const CACHE_PREFIX = 'zenfi_asset_';
+const VIBE_CACHE_KEY = 'zenfi_market_vibe';
+
+const getCacheKey = (symbol: string) => `${CACHE_PREFIX}${symbol.toUpperCase()}`;
+
 export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
+  const cacheKey = getCacheKey(symbol);
+  
   const prompt = `
     Find the current live data for ${symbol} using the search tool.
     
@@ -60,7 +67,7 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
     // Generate advanced data
     const { sparkline, ohlcData } = generateMockHistory(data.pricePrimary, data.change24h);
 
-    return {
+    const assetData: AssetData = {
       id: symbol.toUpperCase(),
       symbol: symbol.toUpperCase(),
       name: data.name,
@@ -75,11 +82,38 @@ export const fetchAssetData = async (symbol: string): Promise<AssetData> => {
       sparkline,
       ohlcData,
       isTrending: Math.abs(data.change24h) > 5,
-      rates: data.rates
+      rates: data.rates,
+      isStale: false
     };
 
+    // Save successful fetch to cache
+    try {
+        localStorage.setItem(cacheKey, JSON.stringify(assetData));
+    } catch (e) {
+        console.warn('Failed to save to cache', e);
+    }
+
+    return assetData;
+
   } catch (error) {
-    console.error("Gemini fetch error:", error);
+    console.warn(`Gemini fetch error for ${symbol}, attempting cache fallback:`, error);
+    
+    // Fallback to cache
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+        try {
+            const data = JSON.parse(cached) as AssetData;
+            return {
+                ...data,
+                isStale: true,
+                vibe: `${data.vibe} (Cached)`,
+                lastUpdated: `${data.lastUpdated}`
+            };
+        } catch (parseError) {
+            console.error("Cache parse error", parseError);
+        }
+    }
+
     throw error;
   }
 };
@@ -91,9 +125,14 @@ export const getMarketVibe = async (): Promise<string> => {
             contents: "What is the overall sentiment of the global financial market? Answer in 1 short, soothing, zen-like sentence.",
             config: { tools: [{ googleSearch: {} }] }
         });
-        return response.text || "Balance is being restored...";
+        const vibe = response.text || "Balance is being restored...";
+        
+        // Cache the vibe
+        localStorage.setItem(VIBE_CACHE_KEY, vibe);
+        return vibe;
     } catch (e) {
-        return "Seeking equilibrium...";
+        // Fallback to cache or default
+        return localStorage.getItem(VIBE_CACHE_KEY) || "Seeking equilibrium...";
     }
 }
 
